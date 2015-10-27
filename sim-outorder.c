@@ -72,6 +72,7 @@
 #include "ptrace.h"
 #include "dlite.h"
 #include "sim.h"
+#include "stdint.h"
 
 /*
  * This file implements a very detailed out-of-order issue superscalar
@@ -80,7 +81,12 @@
  * pipeline operations.
  */
 
+//New struct for branch confidence predictor
+//static uint32_t confCounters[4096] = {0};
+static int misPredicts = 0;
+static uint32_t GHSR = 0;
 /* simulated registers */
+
 static struct regs_t regs;
 
 /* simulated memory */
@@ -1190,6 +1196,10 @@ void
 sim_reg_stats(struct stat_sdb_t *sdb)   /* stats database */
 {
   int i;
+  //Added 10/24
+  stat_reg_counter(sdb, "NumMispredicts",
+		   "total number of mispredicts",
+		   &misPredicts, 0, NULL);
   stat_reg_counter(sdb, "sim_num_insn",
 		   "total number of instructions committed",
 		   &sim_num_insn, sim_num_insn, NULL);
@@ -4061,6 +4071,28 @@ ruu_dispatch(void)
 	     non-speculative state is committed into the BTB */
 	  if (MD_OP_FLAGS(op) & F_CTRL)
 	    {
+              //ADDED 10/27/2015 to check
+              //This should shift GHSR by 1 and add a 1 if taken, 0 if not taken
+              if (br_taken) {
+                GHSR = (GHSR << 1) | 0x1;
+                  }
+              else {
+                GHSR = (GHSR << 1);
+              }
+
+
+              if (br_taken != br_pred_taken){
+                misPredicts++;
+                uint32_t PC13_2 = ((regs.regs_PC >> 2) & 0xfff);
+                uint32_t brHist12 = GHSR & 0xfff;
+                uint32_t confIndex = PC13_2 ^ brHist12;
+                  
+                
+                //reset appropriate counter to 0
+              }
+              else{
+                //increment appropriate counter
+              }
 	      sim_num_branches++;
 	      if (pred && bpred_spec_update == spec_ID)
 		{
