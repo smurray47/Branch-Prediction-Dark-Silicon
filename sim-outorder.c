@@ -82,9 +82,14 @@
  */
 
 //New struct for branch confidence predictor
-//static uint32_t confCounters[4096] = {0};
-static int misPredicts = 0;
+static uint32_t confCounters[4096] = {0};
+#define CONFTHRESH 15
+static counter_t misPredicts = 0;
 static uint32_t GHSR = 0;
+static counter_t corHcBr = 0;
+static counter_t corLcBr = 0;
+static counter_t inCorHcBr = 0;
+static counter_t inCorLcBr = 0;
 /* simulated registers */
 
 static struct regs_t regs;
@@ -1200,6 +1205,18 @@ sim_reg_stats(struct stat_sdb_t *sdb)   /* stats database */
   stat_reg_counter(sdb, "NumMispredicts",
 		   "total number of mispredicts",
 		   &misPredicts, 0, NULL);
+  stat_reg_counter(sdb, "corHcBr",
+		   "correct high confidence branches",
+		   &corHcBr, 0, NULL);
+  stat_reg_counter(sdb, "inCorHcBr",
+		   "incorrect high confidence branches",
+		   &inCorHcBr, 0, NULL);
+  stat_reg_counter(sdb, "corLcBr",
+		   "correct low confidence branches",
+		   &corLcBr, 0, NULL);
+  stat_reg_counter(sdb, "inCorHcBr",
+		   "incorrect low confidence branches",
+		   &inCorLcBr, 0, NULL);
   stat_reg_counter(sdb, "sim_num_insn",
 		   "total number of instructions committed",
 		   &sim_num_insn, sim_num_insn, NULL);
@@ -4071,6 +4088,11 @@ ruu_dispatch(void)
 	     non-speculative state is committed into the BTB */
 	  if (MD_OP_FLAGS(op) & F_CTRL)
 	    {
+
+	      uint32_t PC13_2 = ((regs.regs_PC >> 2) & 0xfff);
+	      uint32_t brHist12 = GHSR & 0xfff;
+	      uint32_t confIndex = PC13_2 ^ brHist12;
+              
               //ADDED 10/27/2015 to check
               //This should shift GHSR by 1 and add a 1 if taken, 0 if not taken
               if (br_taken) {
@@ -4082,16 +4104,28 @@ ruu_dispatch(void)
 
 
               if (br_taken != br_pred_taken){
-                misPredicts++;
-                uint32_t PC13_2 = ((regs.regs_PC >> 2) & 0xfff);
-                uint32_t brHist12 = GHSR & 0xfff;
-                uint32_t confIndex = PC13_2 ^ brHist12;
-                  
+		//increment appropriate counter if incorrectly predicted
+		if (confCounters[confIndex] >= CONFTHRESH){
+		  inCorHcBr++;
+		}
+		else{
+		  inCorLcBr++;
+		}
+		misPredicts++;    
                 
                 //reset appropriate counter to 0
+		confCounters[confIndex] = 0;
               }
               else{
+		//increment appropriate counter if correctly predicted
+		if (confCounters[confIndex] >= CONFTHRESH){
+		  corHcBr++;
+		}
+		else{
+		  corLcBr++;
+		}
                 //increment appropriate counter
+		confCounters[confIndex]++;
               }
 	      sim_num_branches++;
 	      if (pred && bpred_spec_update == spec_ID)
