@@ -90,7 +90,33 @@ static counter_t corHcBr = 0;
 static counter_t corLcBr = 0;
 static counter_t inCorHcBr = 0;
 static counter_t inCorLcBr = 0;
+static unsigned int* activity = NULL;
+static int powerIndex = 0;
+static int stalling = 0;
+static tick_t sim_cycle = 0;
+
+
 /* simulated registers */
+
+static void updatePower(){
+  int index = sim_cycle/10000 + 1;
+  if (powerIndex != index){
+    activity = realloc(activity, index*sizeof(*activity));
+    activity[index-1] = 0;
+    powerIndex = index;
+  }
+  activity[powerIndex-1]++;
+}
+
+void printActivity(){
+  int i;
+  fprintf(stderr, "\n\n\nindex;numIssued\n");
+  for(i = 0; i < powerIndex; i++){
+    fprintf(stderr, "%d;%u\n", i, activity[i]);
+  }
+  fprintf(stderr, "\n\n\n\n\n");
+}
+
 
 static struct regs_t regs;
 
@@ -339,7 +365,7 @@ static counter_t sim_num_branches = 0;
 static counter_t sim_total_branches = 0;
 
 /* cycle counter */
-static tick_t sim_cycle = 0;
+
 
 /* occupancy counters */
 static counter_t IFQ_count;		/* cumulative IFQ occupancy */
@@ -735,6 +761,11 @@ sim_reg_options(struct opt_odb_t *odb)
   opt_reg_int(odb, "-ruu:size",
 	      "register update unit (RUU) size",
 	      &RUU_size, /* default */16,
+	      /* print */TRUE, /* format */NULL);
+
+  opt_reg_int(odb, "-savepower",
+	      "stall on low confidence branches",
+	      &stalling, /* default */0,
 	      /* print */TRUE, /* format */NULL);
 
   /* memory scheduler options  */
@@ -1470,6 +1501,7 @@ sim_load_prog(char *fname,		/* program to load */
 void
 sim_aux_stats(FILE *stream)             /* output stream */
 {
+  printActivity();
   /* nada */
 }
 
@@ -2693,6 +2725,7 @@ ruu_issue(void)
 
 	      /* one more inst issued */
 	      n_issued++;
+              updatePower();
 	    }
 	  else
 	    {
@@ -2806,6 +2839,7 @@ ruu_issue(void)
 
 		      /* one more inst issued */
 		      n_issued++;
+                      updatePower();
 		    }
 		  else /* no functional unit */
 		    {
@@ -2830,6 +2864,7 @@ ruu_issue(void)
 
 		  /* one more inst issued */
 		  n_issued++;
+                  updatePower();
 		}
 	    } /* !store */
 
@@ -4123,6 +4158,9 @@ ruu_dispatch(void)
 		}
 		else{
 		  corLcBr++;
+                  if(stalling){
+                    sim_cycle += ruu_branch_penalty;
+                  }
 		}
                 //increment appropriate counter
 		confCounters[confIndex]++;
@@ -4666,7 +4704,10 @@ sim_main(void)
       sim_cycle++;
 
       /* finish early? */
-      if (max_insts && sim_num_insn >= max_insts)
+      if (max_insts && sim_num_insn >= max_insts){
+        printActivity();
 	return;
+      }
     }
+  printActivity();
 }
